@@ -8,7 +8,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function simulatePaymentAction(bookingId: string) {
   // El pago simulado NUNCA debe funcionar en producción: sería regalar pasajes
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.ENABLE_FAKE_PAYMENTS !== "true") {
     return { ok: false as const, error: "No disponible." };
   }
   if (!UUID.test(bookingId)) return { ok: false as const, error: "Reserva inválida." };

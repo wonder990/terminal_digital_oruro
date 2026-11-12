@@ -66,7 +66,7 @@ export default async function PaymentPage({
         <p className="mt-4 rounded bg-red-50 p-3 text-red-800">
           Esta reserva ya no está activa. Vuelve a elegir tu asiento.
         </p>
-      ) : process.env.NODE_ENV !== "production" ? (
+      ) : process.env.ENABLE_FAKE_PAYMENTS === "true" ? (
         <PayButton bookingId={booking.id} />
       ) : (
         <p className="mt-4 rounded border p-3 text-gray-600">

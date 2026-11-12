@@ -49,6 +49,7 @@ export const bookings = pgTable("bookings", {
   phone: text("phone").notNull(),
   status: text("status").notNull().default("pending"), // pending | paid | cancelled | refunded
   ticketCode: text("ticket_code").unique(),
+  boardedAt: timestamp("boarded_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
