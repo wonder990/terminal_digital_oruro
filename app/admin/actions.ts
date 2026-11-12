@@ -8,7 +8,9 @@ import {
   isAdmin,
   setAdminCookie,
 } from "@/lib/admin-auth";
-import { createDeparture } from "@/lib/services/admin";
+import { createDeparture, releaseHolds } from "@/lib/services/admin";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function loginAction(pin: string) {
   if (adminPinIsValid(pin)) {
@@ -89,4 +91,12 @@ export async function createDepartureAction(form: Form) {
     console.error(e);
     return { ok: false as const, error: "No se pudo crear la salida." };
   }
+}
+
+export async function releaseHoldsAction(formData: FormData) {
+  if (!(await isAdmin())) return;
+  const id = String(formData.get("id") ?? "");
+  if (!UUID.test(id)) return;
+  await releaseHolds(id);
+  revalidatePath("/admin");
 }

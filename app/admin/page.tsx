@@ -3,7 +3,7 @@ import { isAdmin } from "@/lib/admin-auth";
 import { listAdminDepartures } from "@/lib/services/admin";
 import LoginForm from "./login-form";
 import DepartureForm from "./departure-form";
-import { logoutAction } from "./actions";
+import { logoutAction, releaseHoldsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { robots: { index: false, follow: false } };
@@ -49,12 +49,21 @@ export default async function AdminPage() {
               })}
             </div>
             <div className="mt-1 text-sm">
-              Vendidos <strong>{d.sold}</strong> de <strong>{d.total}</strong>
+              Vendidos <strong>{d.sold}</strong> de <strong>{d.total}</strong> · Apartados ahora{" "}
+              <strong>{d.held}</strong>
             </div>
             <div className="mt-2 flex gap-4 text-sm">
               <Link href={`/salidas/${d.id}`} className="text-blue-700">Ver asientos</Link>
               <Link href={`/abordaje/${d.id}`} className="text-blue-700">Abordaje</Link>
             </div>
+            {d.held > 0 && (
+              <form action={releaseHoldsAction} className="mt-2">
+                <input type="hidden" name="id" value={d.id} />
+                <button type="submit" className="text-sm font-semibold text-red-700">
+                  Liberar reservas sin pagar ({d.held})
+                </button>
+              </form>
+            )}
           </li>
         ))}
       </ul>

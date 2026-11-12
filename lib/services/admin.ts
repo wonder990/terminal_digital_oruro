@@ -73,7 +73,9 @@ export async function listAdminDepartures() {
            r.origin, r.destination, c.name as company,
            (select count(*)::int from departure_seats s where s.departure_id = d.id) as total,
            (select count(*)::int from departure_seats s
-              where s.departure_id = d.id and s.status = 'sold') as sold
+              where s.departure_id = d.id and s.status = 'sold') as sold,
+           (select count(*)::int from departure_seats s
+              where s.departure_id = d.id and s.status = 'held' and s.held_until > now()) as held
     from departures d
     join routes r on r.id = d.route_id
     join companies c on c.id = r.company_id
@@ -91,5 +93,25 @@ export async function listAdminDepartures() {
     company: string;
     total: number;
     sold: number;
+    held: number;
   }[];
+}
+
+// Libera todas las reservas sin pagar de una salida
+export async function releaseHolds(departureId: string) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      update bookings set status = 'cancelled'
+      where status = 'pending'
+        and seat_id in (
+          select id from departure_seats where departure_id = ${departureId} and status = 'held'
+        )
+    `);
+    const released = await tx.execute(sql`
+      update departure_seats set status = 'available', held_by = null, held_until = null
+      where departure_id = ${departureId} and status = 'held'
+      returning id
+    `);
+    return released.length;
+  });
 }

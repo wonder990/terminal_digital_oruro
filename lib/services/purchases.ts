@@ -8,11 +8,28 @@ export const MAX_SEATS_PER_PURCHASE = 4;
 export type PurchaseItem = { seatId: string; name: string; ci: string; phone: string };
 
 // Aparta TODOS los asientos o NINGUNO, y crea una reserva por pasajero
+// Tope de asientos apartados sin pagar por salida: 40 % y mínimo 8
+const HOLD_CAP_PERCENT = 0.4;
+const HOLD_CAP_MIN = 8;
+
+// Aparta TODOS los asientos o NINGUNO, y crea una reserva por pasajero
 export async function createPurchase(userId: string, items: PurchaseItem[]) {
   const ids = items.map((i) => i.seatId);
   const groupId = randomUUID();
 
   return db.transaction(async (tx) => {
+    const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+
+    // 0. Todos los asientos deben ser de la misma salida
+    const deps = (await tx.execute(sql`
+      select distinct departure_id from departure_seats where id in (${idList})
+    `)) as unknown as { departure_id: string }[];
+    if (deps.length !== 1) throw new Error("SEAT_UNAVAILABLE");
+    const departureId = deps[0].departure_id;
+
+    // Un candado por salida: las compras de una misma salida se procesan de una en una
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${departureId}::text))`);
+
     // 1. Soltar lo que esta persona tenía apartado antes
     await tx.execute(sql`
       update bookings set status = 'cancelled'
@@ -24,8 +41,16 @@ export async function createPurchase(userId: string, items: PurchaseItem[]) {
       where held_by = ${userId} and status = 'held'
     `);
 
-    // 2. Apartar todos (salida abierta y que no haya partido)
-    const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+    // 2. Revisar el tope de apartados de esta salida
+    const stats = (await tx.execute(sql`
+      select count(*)::int as total,
+             (count(*) filter (where status = 'held' and held_until > now()))::int as held
+      from departure_seats where departure_id = ${departureId}
+    `)) as unknown as { total: number; held: number }[];
+    const cap = Math.max(HOLD_CAP_MIN, Math.ceil(stats[0].total * HOLD_CAP_PERCENT));
+    if (stats[0].held + ids.length > cap) throw new Error("HOLD_CAP");
+
+    // 3. Apartar todos (salida abierta y que no haya partido)
     const held = (await tx.execute(sql`
       update departure_seats s
       set status = 'held', held_by = ${userId}, held_until = now() + interval '10 minutes'
@@ -35,19 +60,17 @@ export async function createPurchase(userId: string, items: PurchaseItem[]) {
         and d.departs_at > now()
         and s.id in (${idList})
         and (s.status = 'available' or (s.status = 'held' and s.held_until < now()))
-      returning s.id, s.departure_id
-    `)) as unknown as { id: string; departure_id: string }[];
-
+      returning s.id
+    `)) as unknown as { id: string }[];
     if (held.length !== ids.length) throw new Error("SEAT_UNAVAILABLE");
-    if (new Set(held.map((h) => h.departure_id)).size !== 1) throw new Error("SEAT_UNAVAILABLE");
 
-    // 3. Cancelar reservas pendientes viejas de esos asientos
+    // 4. Cancelar reservas pendientes viejas de esos asientos
     await tx.execute(sql`
       update bookings set status = 'cancelled'
       where status = 'pending' and seat_id in (${idList})
     `);
 
-    // 4. Una reserva por pasajero
+    // 5. Una reserva por pasajero
     await tx.insert(bookings).values(
       items.map((i) => ({
         seatId: i.seatId,

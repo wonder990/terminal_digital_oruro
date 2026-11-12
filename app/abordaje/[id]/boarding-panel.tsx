@@ -61,6 +61,7 @@ export default function BoardingPanel({
   useEffect(() => {
     if (!scanning) return;
     let cancelled = false;
+    let started = false;
     let scanner: import("html5-qrcode").Html5Qrcode | null = null;
 
     (async () => {
@@ -74,15 +75,33 @@ export default function BoardingPanel({
           (text) => handlerRef.current(text),
           () => {}
         );
+        started = true;
+        // Si se pidió apagar la cámara mientras arrancaba, se apaga ahora
+        if (cancelled) {
+          try {
+            await scanner.stop();
+            scanner.clear();
+          } catch {
+            // ya estaba detenida
+          }
+        }
       } catch {
-        setCamError("No se pudo abrir la cámara. Revisa el permiso o usa la lista de pasajeros.");
-        setScanning(false);
+        if (!cancelled) {
+          setCamError("No se pudo abrir la cámara. Revisa el permiso o usa la lista de pasajeros.");
+          setScanning(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
-      if (scanner) scanner.stop().then(() => scanner?.clear()).catch(() => {});
+      if (scanner && started) {
+        try {
+          scanner.stop().then(() => scanner?.clear()).catch(() => {});
+        } catch {
+          // la librería puede lanzar el error de forma directa
+        }
+      }
     };
   }, [scanning]);
 

@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, integer, timestamp, jsonb, unique, index,
+  pgTable, uuid, text, integer, timestamp, jsonb, unique, index, bigserial,
 } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
@@ -74,4 +74,14 @@ export const paymentEvents = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique().on(t.provider, t.eventId)]
+);
+
+export const rateEvents = pgTable(
+  "rate_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    key: text("key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.key, t.createdAt)]
 );

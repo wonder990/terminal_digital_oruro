@@ -1,11 +1,17 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { randomUUID } from "crypto";
+import { allowAttempt } from "@/lib/rate-limit";
 import { validatePassenger } from "@/lib/services/bookings";
 import { createPurchase, MAX_SEATS_PER_PURCHASE } from "@/lib/services/purchases";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Límites: por sesión, estrictos; por IP, holgados (muchas personas comparten IP en redes de celular)
+const SESSION_MAX = 6;
+const IP_MAX = 30;
+const WINDOW_SECONDS = 600;
 
 // Identifica al visitante con un código guardado en una cookie
 async function getSessionId() {
@@ -23,6 +29,12 @@ async function getSessionId() {
     });
   }
   return id;
+}
+
+async function getClientIp() {
+  const h = await headers();
+  const forwarded = h.get("x-forwarded-for");
+  return (forwarded?.split(",")[0] ?? h.get("x-real-ip") ?? "desconocida").trim();
 }
 
 type Input = {
@@ -54,6 +66,16 @@ export async function startPurchaseAction(input: Input) {
   }
 
   const userId = await getSessionId();
+  const ip = await getClientIp();
+
+  const okSession = await allowAttempt(`compra:sesion:${userId}`, SESSION_MAX, WINDOW_SECONDS);
+  const okIp = await allowAttempt(`compra:ip:${ip}`, IP_MAX, WINDOW_SECONDS);
+  if (!okSession || !okIp) {
+    return {
+      ok: false as const,
+      error: "Demasiados intentos seguidos. Espera unos minutos e inténtalo de nuevo.",
+    };
+  }
 
   try {
     const groupId = await createPurchase(userId, items);
@@ -64,6 +86,12 @@ export async function startPurchaseAction(input: Input) {
         ok: false as const,
         refresh: true,
         error: "Alguno de los asientos ya no está disponible. Elige de nuevo.",
+      };
+    }
+    if (e instanceof Error && e.message === "HOLD_CAP") {
+      return {
+        ok: false as const,
+        error: "Hay muchas personas comprando en esta salida. Intenta de nuevo en unos minutos.",
       };
     }
     console.error(e);
