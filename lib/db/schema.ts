@@ -44,6 +44,7 @@ export const departureSeats = pgTable(
 export const bookings = pgTable("bookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   seatId: uuid("seat_id").notNull().references(() => departureSeats.id),
+  groupId: uuid("group_id"),
   passengerName: text("passenger_name").notNull(),
   passengerCi: text("passenger_ci").notNull(),
   phone: text("phone").notNull(),

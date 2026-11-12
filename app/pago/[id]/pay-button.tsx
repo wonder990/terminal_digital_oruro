@@ -13,7 +13,7 @@ export default function PayButton({ bookingId }: { bookingId: string }) {
     setError(null);
     startTransition(async () => {
       const res = await simulatePaymentAction(bookingId);
-      if (res.ok) router.push(`/pasaje/${res.ticketCode}`);
+            if (res.ok) router.push(`/compra/${bookingId}`);
       else setError(res.error);
     });
   }

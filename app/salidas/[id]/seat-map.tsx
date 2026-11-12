@@ -1,91 +1,86 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createBookingAction, holdSeatAction } from "./actions";
+import { startPurchaseAction } from "./actions";
 
 type Seat = { id: string; label: string; status: string };
+
+const MAX = 4;
 
 const seatStyles: Record<string, string> = {
   available: "border-green-600 bg-green-100 text-green-900 cursor-pointer hover:bg-green-200",
   held: "border-yellow-500 bg-yellow-100 text-yellow-900 cursor-not-allowed",
   sold: "border-gray-400 bg-gray-300 text-gray-600 cursor-not-allowed",
-  mine: "border-blue-600 bg-blue-600 text-white",
+  mine: "border-blue-600 bg-blue-600 text-white cursor-pointer",
 };
 
 export default function SeatMap({ seats }: { seats: Seat[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [selected, setSelected] = useState<{ id: string; label: string; heldUntil: number } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  const [form, setForm] = useState({ name: "", ci: "", phone: "" });
-  const [formError, setFormError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [people, setPeople] = useState<Record<string, { name: string; ci: string }>>({});
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  // Reloj que se actualiza cada segundo
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const chosen = seats.filter((s) => selected.includes(s.id));
 
-  const remaining = selected ? Math.max(0, Math.floor((selected.heldUntil - now) / 1000)) : 0;
-
-  // Cuando el tiempo se acaba, se suelta el asiento
-  useEffect(() => {
-    if (selected && remaining === 0) {
-      setSelected(null);
-      setMessage("Se acabó el tiempo. Elige un asiento de nuevo.");
-      router.refresh();
-    }
-  }, [selected, remaining, router]);
-
-  function pick(seat: Seat) {
+  function toggle(seat: Seat) {
     if (seat.status !== "available" || pending) return;
-    setMessage(null);
-    setFormError(null);
+    setError(null);
+    if (selected.includes(seat.id)) {
+      setSelected(selected.filter((id) => id !== seat.id));
+    } else if (selected.length >= MAX) {
+      setError(`Máximo ${MAX} asientos por compra.`);
+    } else {
+      setSelected([...selected, seat.id]);
+    }
+  }
 
-    startTransition(async () => {
-      const res = await holdSeatAction(seat.id);
-
-      if (res.ok) {
-        setSelected({ id: seat.id, label: seat.label, heldUntil: new Date(res.heldUntil).getTime() });
-      } else if (res.error === "SEAT_UNAVAILABLE") {
-        setMessage("Ese asiento ya fue tomado. Elige otro.");
-      } else {
-        setMessage("Ocurrió un error. Intenta de nuevo.");
-      }
-      router.refresh();
-    });
+  function setPerson(id: string, key: "name" | "ci", value: string) {
+    const current = people[id] ?? { name: "", ci: "" };
+    setPeople({ ...people, [id]: { ...current, [key]: value } });
   }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected || pending) return;
-    setFormError(null);
+    if (pending || chosen.length === 0) return;
+    setError(null);
 
     startTransition(async () => {
-      const res = await createBookingAction(selected.id, form);
+      const res = await startPurchaseAction({
+        seats: chosen.map((s) => ({
+          seatId: s.id,
+          name: people[s.id]?.name ?? "",
+          ci: people[s.id]?.ci ?? "",
+        })),
+        phone,
+      });
+
       if (res.ok) {
-        router.push(`/pago/${res.bookingId}`);
+        router.push(`/pago/${res.groupId}`);
       } else {
-        setFormError(res.error);
+        setError(res.error);
+        if ("refresh" in res && res.refresh) {
+          setSelected([]);
+          router.refresh();
+        }
       }
     });
   }
 
-  const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
-  const seconds = String(remaining % 60).padStart(2, "0");
+  const input = "mt-1 w-full rounded border p-2";
 
   return (
     <div>
       <div className="grid grid-cols-4 gap-3">
         {seats.map((s) => {
-          const style = seatStyles[s.id === selected?.id ? "mine" : s.status];
+          const style = seatStyles[selected.includes(s.id) ? "mine" : s.status];
           return (
             <button
               key={s.id}
               type="button"
-              onClick={() => pick(s)}
+              onClick={() => toggle(s)}
               disabled={pending}
               className={`flex h-12 items-center justify-center rounded border-2 font-semibold ${style}`}
             >
@@ -95,66 +90,65 @@ export default function SeatMap({ seats }: { seats: Seat[] }) {
         })}
       </div>
 
-      {message && <p className="mt-4 rounded bg-red-50 p-3 text-red-800">{message}</p>}
+      <p className="mt-3 text-sm text-gray-600">
+        Puedes elegir hasta {MAX} asientos. Cada pasajero lleva su propio boleto.
+      </p>
 
-      {selected && (
-        <div className="mt-4 rounded border border-blue-600 bg-blue-50 p-4">
-          <p className="font-semibold">Asiento {selected.label} apartado para ti</p>
-          <p className="mb-4 text-sm text-gray-700">
-            Tienes <span className="font-mono font-bold">{minutes}:{seconds}</span> para completar tu compra.
+      {error && <p className="mt-3 rounded bg-red-50 p-3 text-red-800">{error}</p>}
+
+      {chosen.length > 0 && (
+        <form onSubmit={submit} className="mt-4 space-y-4 rounded border border-blue-600 bg-blue-50 p-4">
+          {chosen.map((s) => (
+            <fieldset key={s.id} className="space-y-2 rounded border bg-white p-3">
+              <legend className="px-1 font-semibold">Asiento {s.label}</legend>
+              <label className="block text-sm">
+                Nombre completo
+                <input
+                  value={people[s.id]?.name ?? ""}
+                  onChange={(e) => setPerson(s.id, "name", e.target.value)}
+                  required
+                  className={input}
+                />
+              </label>
+              <label className="block text-sm">
+                Carnet de identidad (CI)
+                <input
+                  value={people[s.id]?.ci ?? ""}
+                  onChange={(e) => setPerson(s.id, "ci", e.target.value)}
+                  inputMode="numeric"
+                  required
+                  className={input}
+                />
+              </label>
+            </fieldset>
+          ))}
+
+          <label className="block text-sm">
+            Celular del comprador (WhatsApp)
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="Ej: 71234567"
+              required
+              className={input}
+            />
+          </label>
+
+          <p className="text-xs text-gray-600">
+            Al continuar, tus asientos se apartan por 10 minutos para que pagues.
           </p>
 
-          <form onSubmit={submit} className="space-y-3">
-            <label className="block text-sm">
-              Nombre completo
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                autoComplete="name"
-                required
-                className="mt-1 w-full rounded border p-2"
-              />
-            </label>
-
-            <label className="block text-sm">
-              Carnet de identidad (CI)
-              <input
-                type="text"
-                value={form.ci}
-                onChange={(e) => setForm({ ...form, ci: e.target.value })}
-                inputMode="numeric"
-                placeholder="Ej: 1234567"
-                required
-                className="mt-1 w-full rounded border p-2"
-              />
-            </label>
-
-            <label className="block text-sm">
-              Celular (WhatsApp)
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="Ej: 71234567"
-                required
-                className="mt-1 w-full rounded border p-2"
-              />
-            </label>
-
-            {formError && <p className="rounded bg-red-50 p-2 text-sm text-red-800">{formError}</p>}
-
-            <button
-              type="submit"
-              disabled={pending}
-              className="w-full rounded bg-blue-600 p-3 font-semibold text-white disabled:opacity-50"
-            >
-              {pending ? "Procesando..." : "Continuar al pago"}
-            </button>
-          </form>
-        </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="w-full rounded bg-blue-600 p-3 font-semibold text-white disabled:opacity-50"
+          >
+            {pending ? "Procesando..." : `Continuar al pago (${chosen.length})`}
+          </button>
+        </form>
       )}
     </div>
   );

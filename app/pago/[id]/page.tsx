@@ -1,12 +1,12 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
-import { getBookingForUser } from "@/lib/services/bookings";
+import { notFound, redirect } from "next/navigation";
+import { getPurchaseForUser } from "@/lib/services/purchases";
 import PayButton from "./pay-button";
 
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TZ = "America/La_Paz";
 
 export default async function PaymentPage({
   params,
@@ -20,15 +20,19 @@ export default async function PaymentPage({
   const userId = store.get("session_id")?.value;
   if (!userId || !UUID.test(userId)) notFound();
 
-  // Solo quien apartó el asiento puede ver esta reserva
-  const booking = await getBookingForUser(id, userId);
-  if (!booking) notFound();
+  const rows = await getPurchaseForUser(id, userId);
+  if (rows.length === 0) notFound();
+  if (rows.every((r) => r.status === "paid")) redirect(`/compra/${id}`);
 
-  const paid = booking.status === "paid" && booking.ticket_code;
-  const expired =
-    booking.status !== "pending" ||
-    !booking.held_until ||
-    new Date(booking.held_until) < new Date();
+  const now = Date.now();
+  const expired = rows.some(
+    (r) => r.status !== "pending" || !r.held_until || new Date(r.held_until).getTime() < now
+  );
+  const until = Math.min(
+    ...rows.map((r) => (r.held_until ? new Date(r.held_until).getTime() : 0))
+  );
+  const first = rows[0];
+  const total = rows.reduce((sum, r) => sum + r.price_cents, 0);
 
   return (
     <main className="mx-auto max-w-md p-4">
@@ -36,42 +40,59 @@ export default async function PaymentPage({
 
       <div className="space-y-1 rounded border p-4">
         <p className="text-lg font-semibold">
-          {booking.origin} → {booking.destination}
+          {first.origin} → {first.destination}
         </p>
         <p className="text-gray-600">
-          {booking.company} ·{" "}
-          {new Date(booking.departs_at).toLocaleString("es-BO", {
-            timeZone: "America/La_Paz",
+          {first.company} ·{" "}
+          {new Date(first.departs_at).toLocaleString("es-BO", {
+            timeZone: TZ,
             dateStyle: "medium",
             timeStyle: "short",
           })}
         </p>
-        <p>Asiento: <strong>{booking.seat_label}</strong></p>
-        <p>Pasajero: <strong>{booking.passenger_name}</strong></p>
-        <p>CI: {booking.passenger_ci}</p>
-        <p>Celular: {booking.phone}</p>
-        <p className="pt-2 text-xl font-bold">
-          Total: Bs {(booking.price_cents / 100).toFixed(2)}
-        </p>
+
+        <ul className="divide-y pt-2">
+          {rows.map((r) => (
+            <li key={r.id} className="py-2">
+              <p>
+                Asiento <strong>{r.seat_label}</strong> · {r.passenger_name}
+              </p>
+              <p className="text-sm text-gray-600">
+                CI {r.passenger_ci} · Bs {(r.price_cents / 100).toFixed(2)}
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        <p className="text-sm text-gray-600">Celular: {first.phone}</p>
+        <p className="pt-2 text-xl font-bold">Total: Bs {(total / 100).toFixed(2)}</p>
       </div>
 
-      {paid ? (
-        <Link
-          href={`/pasaje/${booking.ticket_code}`}
-          className="mt-4 block rounded bg-green-600 p-3 text-center font-semibold text-white"
-        >
-          Esta compra ya está pagada. Ver mi pasaje
-        </Link>
-      ) : expired ? (
+      {expired ? (
         <p className="mt-4 rounded bg-red-50 p-3 text-red-800">
-          Esta reserva ya no está activa. Vuelve a elegir tu asiento.
+          Esta reserva ya no está activa. Vuelve a elegir tus asientos.
         </p>
-      ) : process.env.ENABLE_FAKE_PAYMENTS === "true" ? (
-        <PayButton bookingId={booking.id} />
       ) : (
-        <p className="mt-4 rounded border p-3 text-gray-600">
-          El pago con QR estará disponible pronto.
-        </p>
+        <>
+          <p className="mt-4 text-sm text-gray-700">
+            Tus asientos están apartados hasta las{" "}
+            <strong>
+              {new Date(until).toLocaleTimeString("es-BO", {
+                timeZone: TZ,
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </strong>
+            .
+          </p>
+          {process.env.ENABLE_FAKE_PAYMENTS === "true" ? (
+            <PayButton bookingId={id} />
+          ) : (
+            <p className="mt-4 rounded border p-3 text-gray-600">
+              El pago con QR estará disponible pronto.
+            </p>
+          )}
+        </>
       )}
     </main>
   );
