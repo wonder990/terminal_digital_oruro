@@ -8,7 +8,8 @@ import {
   isAdmin,
   setAdminCookie,
 } from "@/lib/admin-auth";
-import { createDeparture, releaseHolds } from "@/lib/services/admin";
+import { createDeparture, releaseHolds, saveBusModel } from "@/lib/services/admin";
+import { parseLayout } from "@/lib/bus-layout";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,7 +34,8 @@ type Form = {
   destination: string;
   departsAt: string; // formato "2026-11-15T20:30"
   price: string; // en bolivianos
-  seats: string;
+  layout: string; // plano del bus en texto
+  saveAs: string; // nombre para guardar el plano como modelo (opcional)
 };
 
 const clean = (s: string) => s.trim().replace(/\s+/g, " ");
@@ -71,10 +73,8 @@ export async function createDepartureAction(form: Form) {
     return { ok: false as const, error: "Precio inválido." };
   }
 
-  const seats = Number(form.seats);
-  if (!Number.isInteger(seats) || seats < 1 || seats > 60) {
-    return { ok: false as const, error: "Los asientos deben ser entre 1 y 60." };
-  }
+  const parsed = parseLayout(form.layout);
+  if (!parsed.ok) return { ok: false as const, error: parsed.error };
 
   try {
     const id = await createDeparture({
@@ -83,8 +83,18 @@ export async function createDepartureAction(form: Form) {
       destination,
       departsAt,
       priceCents: Math.round(price * 100),
-      seats,
+      layout: form.layout,
     });
+
+    const modelName = clean(form.saveAs ?? "");
+    if (modelName.length >= 2 && modelName.length <= 40) {
+      try {
+        await saveBusModel(modelName, form.layout);
+      } catch (e) {
+        console.error(e); // la salida ya se creó; solo falló guardar el modelo
+      }
+    }
+
     revalidatePath("/admin");
     return { ok: true as const, id };
   } catch (e) {

@@ -46,7 +46,7 @@ export default async function DeparturePage({
         <span>⬜ Vendido</span>
       </div>
 
-      <SeatMap seats={seats} />
+      <SeatMap seats={seats} layout={departure.layout} />
     </main>
   );
 }

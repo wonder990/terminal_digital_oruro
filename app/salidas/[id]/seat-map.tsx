@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { startPurchaseAction } from "./actions";
+import { parseLayout } from "@/lib/bus-layout";
+import BusView from "@/components/bus-view";
 
 type Seat = { id: string; label: string; status: string };
 
@@ -15,13 +17,27 @@ const seatStyles: Record<string, string> = {
   mine: "border-blue-600 bg-blue-600 text-white cursor-pointer",
 };
 
-export default function SeatMap({ seats }: { seats: Seat[] }) {
+export default function SeatMap({ seats, layout }: { seats: Seat[]; layout: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<string[]>([]);
   const [people, setPeople] = useState<Record<string, { name: string; ci: string }>>({});
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Las salidas sin plano se muestran con la grilla simple de siempre
+  const parsed = layout ? parseLayout(layout) : null;
+  const decks = parsed && parsed.ok ? parsed.decks : null;
+
+  const byLabel = new Map(seats.map((s) => [s.label, s]));
+  const kinds = new Map<string, string>();
+  decks?.forEach((d) =>
+    d.rows.forEach((row) =>
+      row.forEach((c) => {
+        if (c.type === "seat") kinds.set(c.label, c.kind);
+      })
+    )
+  );
 
   const chosen = seats.filter((s) => selected.includes(s.id));
 
@@ -69,26 +85,46 @@ export default function SeatMap({ seats }: { seats: Seat[] }) {
     });
   }
 
+  function seatButton(s: Seat) {
+    const style = seatStyles[selected.includes(s.id) ? "mine" : s.status];
+    const kind = kinds.get(s.label);
+    return (
+      <button
+        type="button"
+        onClick={() => toggle(s)}
+        disabled={pending}
+        aria-label={`Asiento ${s.label}${kind ? `, ${kind}` : ""}`}
+        className={`flex h-11 w-full items-center justify-center rounded border-2 font-semibold ${style}`}
+      >
+        {s.label}
+      </button>
+    );
+  }
+
   const input = "mt-1 w-full rounded border p-2";
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-3">
-        {seats.map((s) => {
-          const style = seatStyles[selected.includes(s.id) ? "mine" : s.status];
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => toggle(s)}
-              disabled={pending}
-              className={`flex h-12 items-center justify-center rounded border-2 font-semibold ${style}`}
-            >
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
+      {decks ? (
+        <>
+          <BusView
+            decks={decks}
+            renderSeat={(label) => {
+              const seat = byLabel.get(label);
+              return seat ? seatButton(seat) : null;
+            }}
+          />
+          <p className="text-xs text-gray-600">
+            Las franjas celestes a los costados son las ventanas: los asientos pegados a ellas son de ventana.
+          </p>
+        </>
+      ) : (
+        <div className="grid grid-cols-4 gap-3">
+          {seats.map((s) => (
+            <div key={s.id}>{seatButton(s)}</div>
+          ))}
+        </div>
+      )}
 
       <p className="mt-3 text-sm text-gray-600">
         Puedes elegir hasta {MAX} asientos. Cada pasajero lleva su propio boleto.
@@ -100,7 +136,10 @@ export default function SeatMap({ seats }: { seats: Seat[] }) {
         <form onSubmit={submit} className="mt-4 space-y-4 rounded border border-blue-600 bg-blue-50 p-4">
           {chosen.map((s) => (
             <fieldset key={s.id} className="space-y-2 rounded border bg-white p-3">
-              <legend className="px-1 font-semibold">Asiento {s.label}</legend>
+              <legend className="px-1 font-semibold">
+                Asiento {s.label}
+                {kinds.get(s.label) ? ` · ${kinds.get(s.label)}` : ""}
+              </legend>
               <label className="block text-sm">
                 Nombre completo
                 <input

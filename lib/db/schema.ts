@@ -23,6 +23,7 @@ export const departures = pgTable("departures", {
   appSeatQuota: integer("app_seat_quota").notNull(),
   releaseHoursBefore: integer("release_hours_before").notNull().default(2),
   status: text("status").notNull().default("open"), // open | closed | cancelled
+  layout: text("layout"),
 });
 
 export const departureSeats = pgTable(
@@ -85,3 +86,10 @@ export const rateEvents = pgTable(
   },
   (t) => [index().on(t.key, t.createdAt)]
 );
+
+export const busModels = pgTable("bus_models", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  layout: text("layout").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

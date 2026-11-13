@@ -9,6 +9,7 @@ const departureFields = {
   origin: routes.origin,
   destination: routes.destination,
   company: companies.name,
+  layout: departures.layout,
 };
 
 // Lista de salidas abiertas que aún no han partido
@@ -49,7 +50,7 @@ export async function getDepartureWithSeats(id: string) {
           ? "available"
           : s.status,
     }))
-    .sort((a, b) => Number(a.label) - Number(b.label));
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   return { departure, seats };
 }

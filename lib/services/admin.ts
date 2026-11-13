@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { companies, departures, departureSeats, routes } from "../db/schema";
+import { busModels, companies, departures, departureSeats, routes } from "../db/schema";
+import { parseLayout } from "../bus-layout";
 
 export type NewDeparture = {
   company: string;
@@ -8,11 +9,15 @@ export type NewDeparture = {
   destination: string;
   departsAt: Date;
   priceCents: number;
-  seats: number;
+  layout: string; // el plano en texto; se copia dentro de la salida
 };
 
 // Crea (o reutiliza) la empresa y la ruta, la salida y todos sus asientos, en una sola transacción
 export async function createDeparture(input: NewDeparture) {
+  const parsed = parseLayout(input.layout);
+  if (!parsed.ok) throw new Error("INVALID_LAYOUT");
+  const labels = parsed.labels;
+
   return db.transaction(async (tx) => {
     const existingCompany = (
       await tx.select().from(companies).where(eq(companies.name, input.company))
@@ -52,19 +57,29 @@ export async function createDeparture(input: NewDeparture) {
         routeId: route.id,
         departsAt: input.departsAt,
         priceCents: input.priceCents,
-        appSeatQuota: input.seats,
+        appSeatQuota: labels.length,
+        layout: input.layout.trim(),
       })
       .returning();
 
     await tx.insert(departureSeats).values(
-      Array.from({ length: input.seats }, (_, i) => ({
-        departureId: dep.id,
-        seatLabel: String(i + 1),
-      }))
+      labels.map((label) => ({ departureId: dep.id, seatLabel: label }))
     );
 
     return dep.id;
   });
+}
+
+export async function listBusModels() {
+  return db.select().from(busModels).orderBy(busModels.name);
+}
+
+// Guarda (o actualiza) un modelo de bus. Las salidas ya creadas no cambian.
+export async function saveBusModel(name: string, layout: string) {
+  await db
+    .insert(busModels)
+    .values({ name, layout: layout.trim() })
+    .onConflictDoUpdate({ target: busModels.name, set: { layout: layout.trim() } });
 }
 
 export async function listAdminDepartures() {
@@ -114,4 +129,47 @@ export async function releaseHolds(departureId: string) {
     `);
     return released.length;
   });
+}
+export type SearchRow = {
+  id: string;
+  ticket_code: string;
+  passenger_name: string;
+  passenger_ci: string;
+  phone: string;
+  boarded_at: Date | null;
+  seat_label: string;
+  departs_at: Date;
+  origin: string;
+  destination: string;
+  company: string;
+};
+
+// Busca boletos pagados por CI, celular, código o parte del nombre
+export async function searchBookings(raw: string) {
+  const q = raw.trim().slice(0, 60);
+  if (q.length < 3) return [];
+
+  const ci = q.toUpperCase().replace(/\s+/g, "");
+  const phone = q.replace(/[\s-]/g, "").replace(/^\+?591/, "");
+  const code = q.toUpperCase().replace(/\s+/g, "");
+  // Se escapan los comodines para que se busque el texto tal cual
+  const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
+
+  const rows = await db.execute(sql`
+    select b.id, b.ticket_code, b.passenger_name, b.passenger_ci, b.phone, b.boarded_at,
+           s.seat_label, d.departs_at, r.origin, r.destination, c.name as company
+    from bookings b
+    join departure_seats s on s.id = b.seat_id
+    join departures d on d.id = s.departure_id
+    join routes r on r.id = d.route_id
+    join companies c on c.id = r.company_id
+    where b.status = 'paid'
+      and (b.passenger_ci = ${ci}
+           or b.phone = ${phone}
+           or b.ticket_code = ${code}
+           or b.passenger_name ilike ${like})
+    order by b.created_at desc
+    limit 30
+  `);
+  return rows as unknown as SearchRow[];
 }
