@@ -99,6 +99,17 @@ export default async function TicketPage({
       </p>
       <p className="mt-2 text-center text-sm text-gray-600">
         Guarda esta página en tus marcadores o descarga el boleto: no necesitas
+      {process.env.SUPPORT_WHATSAPP && (
+        <p className="mt-2 text-center text-sm text-gray-600">
+          ¿Problemas con tu boleto?{" "}
+          <a
+            href={`https://wa.me/591${process.env.SUPPORT_WHATSAPP}`}
+            className="font-semibold text-green-700"
+          >
+            Escríbenos por WhatsApp
+          </a>
+        </p>
+      )}
         cuenta para volver a verla, solo este enlace.
       </p>
 

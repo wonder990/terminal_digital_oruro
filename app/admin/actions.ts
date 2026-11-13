@@ -8,7 +8,13 @@ import {
   isAdmin,
   setAdminCookie,
 } from "@/lib/admin-auth";
-import { createDeparture, releaseHolds, saveBusModel } from "@/lib/services/admin";
+import {
+  createDeparture,
+  releaseHolds,
+  saveBusModel,
+  setDepartureStatus,
+  toggleSeatBlock,
+} from "@/lib/services/admin";
 import { parseLayout } from "@/lib/bus-layout";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,5 +114,22 @@ export async function releaseHoldsAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!UUID.test(id)) return;
   await releaseHolds(id);
+  revalidatePath("/admin");
+}
+
+export async function toggleBlockAction(seatId: string) {
+  if (!(await isAdmin())) return { ok: false as const };
+  if (!UUID.test(seatId)) return { ok: false as const };
+  const status = await toggleSeatBlock(seatId);
+  if (!status) return { ok: false as const };
+  return { ok: true as const, status };
+}
+
+export async function setStatusAction(formData: FormData) {
+  if (!(await isAdmin())) return;
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!UUID.test(id) || (status !== "open" && status !== "closed")) return;
+  await setDepartureStatus(id, status);
   revalidatePath("/admin");
 }

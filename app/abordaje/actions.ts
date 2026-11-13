@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { boardTicket, type BoardResult } from "@/lib/services/boarding";
+import { boardTicket, unboardTicket, type BoardResult } from "@/lib/services/boarding";
 import { clearStaffCookie, isStaff, pinIsValid, setStaffCookie } from "@/lib/staff-auth";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,4 +25,11 @@ export async function boardAction(code: string, departureId: string): Promise<Bo
   if (!(await isStaff())) return { status: "unauthorized" };
   if (!UUID.test(departureId)) return { status: "invalid" };
   return boardTicket(code, departureId);
+}
+
+export async function unboardAction(code: string, departureId: string) {
+  if (!(await isStaff())) return { ok: false as const };
+  if (!UUID.test(departureId)) return { ok: false as const };
+  const ok = await unboardTicket(code, departureId);
+  return { ok };
 }

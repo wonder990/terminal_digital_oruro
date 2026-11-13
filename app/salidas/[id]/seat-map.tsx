@@ -14,6 +14,7 @@ const seatStyles: Record<string, string> = {
   available: "border-green-600 bg-green-100 text-green-900 cursor-pointer hover:bg-green-200",
   held: "border-yellow-500 bg-yellow-100 text-yellow-900 cursor-not-allowed",
   sold: "border-gray-400 bg-gray-300 text-gray-600 cursor-not-allowed",
+  blocked: "border-gray-400 bg-gray-300 text-gray-600 cursor-not-allowed",
   mine: "border-blue-600 bg-blue-600 text-white cursor-pointer",
 };
 

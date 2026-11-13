@@ -173,3 +173,24 @@ export async function searchBookings(raw: string) {
   `);
   return rows as unknown as SearchRow[];
 }
+
+// Bloquea un asiento libre, o lo desbloquea si estaba bloqueado
+export async function toggleSeatBlock(seatId: string) {
+  const rows = (await db.execute(sql`
+    update departure_seats
+    set status = case when status = 'blocked' then 'available' else 'blocked' end,
+        held_by = null, held_until = null
+    where id = ${seatId}
+      and (status in ('available', 'blocked') or (status = 'held' and held_until < now()))
+    returning status
+  `)) as unknown as { status: string }[];
+  return rows.length > 0 ? rows[0].status : null;
+}
+
+// Cierra o reabre las ventas de una salida
+export async function setDepartureStatus(id: string, status: "open" | "closed") {
+  await db.execute(sql`
+    update departures set status = ${status}
+    where id = ${id} and status in ('open', 'closed')
+  `);
+}

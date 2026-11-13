@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { boardAction } from "../actions";
+import { boardAction, unboardAction } from "../actions";
 
 type Passenger = { code: string; name: string; ci: string; seat: string; boarded: boolean };
 
@@ -44,6 +44,25 @@ export default function BoardingPanel({
       busyRef.current = false;
     }
   }
+
+
+  async function undo(code: string) {
+    if (busyRef.current) return;
+    if (!window.confirm("¿Quitar la marca de abordaje de este pasajero?")) return;
+    busyRef.current = true;
+    try {
+      const res = await unboardAction(code, departureId);
+      if (res.ok) {
+        setPassengers((list) => list.map((p) => (p.code === code ? { ...p, boarded: false } : p)));
+        setResult(null);
+        // Permite volver a escanear ese mismo QR enseguida
+        lastRef.current = { code: "", time: 0 };
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
 
   function handleScan(text: string) {
     const code = text.trim().toUpperCase();
@@ -210,7 +229,16 @@ export default function BoardingPanel({
               <p className="text-sm text-gray-600">CI {p.ci}</p>
             </div>
             {p.boarded ? (
-              <span className="text-sm font-semibold text-green-700">Abordó</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-green-700">Abordó</span>
+                <button
+                  type="button"
+                  onClick={() => undo(p.code)}
+                  className="text-sm text-red-700 underline"
+                >
+                  Deshacer
+                </button>
+              </div>
             ) : (
               <button
                 type="button"

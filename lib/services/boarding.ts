@@ -135,3 +135,23 @@ export async function boardTicket(rawCode: string, departureId: string): Promise
   }
   return { status: "invalid" };
 }
+
+// Quita la marca de abordaje (para corregir un error del encargado)
+export async function unboardTicket(rawCode: string, departureId: string) {
+  const code = rawCode.trim().toUpperCase();
+  if (!CODE.test(code)) return false;
+
+  const rows = (await db.execute(sql`
+    update bookings b
+    set boarded_at = null
+    from departure_seats s
+    where s.id = b.seat_id
+      and s.departure_id = ${departureId}
+      and b.ticket_code = ${code}
+      and b.status = 'paid'
+      and b.boarded_at is not null
+    returning b.id
+  `)) as unknown as { id: string }[];
+
+  return rows.length > 0;
+}

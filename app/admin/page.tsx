@@ -4,7 +4,7 @@ import { isAdmin } from "@/lib/admin-auth";
 import { listAdminDepartures, listBusModels, searchBookings } from "@/lib/services/admin";
 import LoginForm from "./login-form";
 import DepartureForm from "./departure-form";
-import { logoutAction, releaseHoldsAction } from "./actions";
+import { logoutAction, releaseHoldsAction, setStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { robots: { index: false, follow: false } };
@@ -114,6 +114,11 @@ export default async function AdminPage({
           <li key={d.id} className="rounded-lg border p-4">
             <div className="font-semibold">
               {d.origin} → {d.destination} · Bs {(d.price_cents / 100).toFixed(2)}
+              {d.status === "closed" && (
+                <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-800">
+                  Ventas cerradas
+                </span>
+              )}
             </div>
             <div className="text-sm text-gray-600">
               {d.company} · {fmt(d.departs_at)}
@@ -122,18 +127,32 @@ export default async function AdminPage({
               Vendidos <strong>{d.sold}</strong> de <strong>{d.total}</strong> · Apartados ahora{" "}
               <strong>{d.held}</strong>
             </div>
-            <div className="mt-2 flex gap-4 text-sm">
+
+            <div className="mt-2 flex flex-wrap gap-4 text-sm">
               <Link href={`/salidas/${d.id}`} className="text-blue-700">Ver asientos</Link>
+              <Link href={`/admin/salidas/${d.id}`} className="text-blue-700">Bloquear asientos</Link>
               <Link href={`/abordaje/${d.id}`} className="text-blue-700">Abordaje</Link>
             </div>
-            {d.held > 0 && (
-              <form action={releaseHoldsAction} className="mt-2">
-                <input type="hidden" name="id" value={d.id} />
-                <button type="submit" className="text-sm font-semibold text-red-700">
-                  Liberar reservas sin pagar ({d.held})
-                </button>
-              </form>
-            )}
+
+            <div className="mt-2 flex flex-wrap gap-4">
+              {(d.status === "open" || d.status === "closed") && (
+                <form action={setStatusAction}>
+                  <input type="hidden" name="id" value={d.id} />
+                  <input type="hidden" name="status" value={d.status === "open" ? "closed" : "open"} />
+                  <button type="submit" className="text-sm font-semibold text-orange-700">
+                    {d.status === "open" ? "Cerrar ventas" : "Reabrir ventas"}
+                  </button>
+                </form>
+              )}
+              {d.held > 0 && (
+                <form action={releaseHoldsAction}>
+                  <input type="hidden" name="id" value={d.id} />
+                  <button type="submit" className="text-sm font-semibold text-red-700">
+                    Liberar reservas sin pagar ({d.held})
+                  </button>
+                </form>
+              )}
+            </div>
           </li>
         ))}
       </ul>
